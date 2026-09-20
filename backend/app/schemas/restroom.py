@@ -77,3 +77,43 @@ class RestroomDetail(RestroomOut):
     avg_score: float | None = None
     open_issue_count: int = 0
     total_issue_count: int = 0
+
+
+class DeletionImpact(BaseModel):
+    """删除公厕前的影响面评估：哪些数据会随删、哪些会阻断删除。"""
+
+    restroom_id: int
+    code: str
+    name: str
+    inspection_count: int = Field(default=0, description="随删巡查记录数")
+    issue_count: int = Field(default=0, description="随删问题记录数")
+    open_issue_count: int = Field(default=0, description="未闭环问题数（阻断删除）")
+    rectification_count: int = Field(default=0, description="随删整改流水数")
+    attachment_count: int = Field(default=0, description="随删附件图片数")
+    issue_by_status: dict[str, int] = Field(default_factory=dict, description="问题状态分布")
+    issue_by_category: dict[str, int] = Field(default_factory=dict, description="问题分类分布")
+    requires_force: bool = Field(default=False, description="是否存在随删的关联数据")
+    deletable: bool = Field(default=True, description="当前是否允许删除（无未闭环问题）")
+    blocking_reasons: list[str] = Field(default_factory=list, description="阻断删除的原因")
+
+
+class DeletionLogOut(BaseModel):
+    """公厕删除审计记录。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    restroom_id: int
+    code: str
+    name: str
+    district: str
+    inspection_count: int
+    issue_count: int
+    rectification_count: int
+    attachment_count: int
+    issue_by_status: dict[str, int] = Field(default_factory=dict)
+    issue_by_category: dict[str, int] = Field(default_factory=dict)
+    restroom_snapshot: dict = Field(default_factory=dict)
+    operator: str = ""
+    reason: str | None = None
+    created_at: datetime

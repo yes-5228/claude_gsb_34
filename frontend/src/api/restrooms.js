@@ -9,4 +9,6 @@ export const restroomApi = {
   update: (id, payload) => http.patch(`${RESOURCE}/${id}`, payload),
   remove: (id, params) => http.delete(`${RESOURCE}/${id}`, params),
   districts: () => http.get(`${RESOURCE}/meta/districts`),
+  deletionImpact: (id) => http.get(`${RESOURCE}/${id}/deletion-impact`),
+  deletionLogs: (params) => http.get(`${RESOURCE}/deletion-logs`, params),
 };

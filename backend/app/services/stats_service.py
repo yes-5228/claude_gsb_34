@@ -12,7 +12,7 @@ from app.core.constants import (
     IssueStatus,
     RestroomStatus,
 )
-from app.models import Inspection, Issue, Restroom
+from app.models import Inspection, Issue, Restroom, RestroomDeletionLog
 from app.schemas.stats import (
     CategoryStat,
     DashboardStats,
@@ -55,6 +55,7 @@ def overview(db: Session) -> OverviewStats:
         restroom_total=_count(db, Restroom),
         restroom_open=_count(db, Restroom, Restroom.status == RestroomStatus.NORMAL.value),
         restroom_maintenance=_count(db, Restroom, Restroom.status == RestroomStatus.MAINTENANCE.value),
+        restroom_deleted_total=_count(db, RestroomDeletionLog),
         inspection_total=_count(db, Inspection),
         inspection_today=_count(db, Inspection, Inspection.inspect_time >= today_start),
         inspection_week=_count(db, Inspection, Inspection.inspect_time >= week_start),

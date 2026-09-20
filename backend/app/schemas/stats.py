@@ -15,6 +15,7 @@ class OverviewStats(BaseModel):
     restroom_total: int = 0
     restroom_open: int = 0
     restroom_maintenance: int = 0
+    restroom_deleted_total: int = Field(default=0, description="累计删除的公厕台账数（详见删除审计）")
     inspection_total: int = 0
     inspection_today: int = 0
     inspection_week: int = 0

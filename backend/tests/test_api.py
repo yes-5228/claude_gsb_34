@@ -2,6 +2,8 @@
 
 from datetime import datetime, timedelta
 
+import pytest
+
 from tests.conftest import full_items
 
 
@@ -206,6 +208,140 @@ def test_issue_requires_matching_restroom(client, restroom):
     )
     assert mismatch.status_code == 400
     assert "不一致" in mismatch.json()["detail"]
+
+
+def test_restroom_deletion_impact_and_audit(client, restroom):
+    # 准备：1 条巡查 + 1 条带附件的问题（初始为未闭环）
+    client.post(
+        "/api/v1/inspections",
+        json={
+            "restroom_id": restroom["id"],
+            "inspector": "测试巡查员",
+            "items": full_items(8),
+        },
+    )
+    issue = client.post(
+        "/api/v1/issues",
+        json={
+            "restroom_id": restroom["id"],
+            "title": "水龙头漏水",
+            "category": "设施损坏",
+            "images": ["https://example.com/a.jpg", "https://example.com/b.jpg"],
+        },
+    ).json()
+
+    # 影响面评估：未闭环问题阻断删除
+    impact = client.get(f"/api/v1/restrooms/{restroom['id']}/deletion-impact").json()
+    assert impact["requires_force"] is True
+    assert impact["deletable"] is False
+    assert impact["inspection_count"] == 1
+    assert impact["issue_count"] == 1
+    assert impact["open_issue_count"] == 1
+    assert impact["rectification_count"] == 1  # 上报问题时写入的首条流水
+    assert impact["attachment_count"] == 2
+    assert impact["issue_by_status"] == {"待整改": 1}
+    assert impact["blocking_reasons"]
+
+    # 未闭环问题存在时，force=true 同样被拒绝
+    blocked = client.delete(f"/api/v1/restrooms/{restroom['id']}", params={"force": "true"})
+    assert blocked.status_code == 409
+    assert "未闭环" in blocked.json()["detail"]
+
+    # 缺 force 时拒绝并提示影响面
+    need_force = client.delete(f"/api/v1/restrooms/{restroom['id']}")
+    assert need_force.status_code == 409
+    assert "整改流水" in need_force.json()["detail"]
+
+    # 先处置：关闭问题后再评估，允许删除
+    client.post(
+        f"/api/v1/issues/{issue['id']}/transitions",
+        json={"to_status": "已关闭", "operator": "值班长", "remark": "公厕停用，作废"},
+    )
+    impact = client.get(f"/api/v1/restrooms/{restroom['id']}/deletion-impact").json()
+    assert impact["deletable"] is True
+    assert impact["open_issue_count"] == 0
+    assert impact["rectification_count"] == 2
+
+    ok = client.delete(
+        f"/api/v1/restrooms/{restroom['id']}",
+        params={"force": "true", "operator": "测试员", "reason": "公厕拆除"},
+    )
+    assert ok.status_code == 200
+    assert "随删巡查 1 条、问题 1 条、整改流水 2 条、附件 2 个" in ok.json()["message"]
+
+    # 关联数据已级联清除
+    assert client.get(f"/api/v1/restrooms/{restroom['id']}").status_code == 404
+    assert client.get(f"/api/v1/issues/{issue['id']}").status_code == 404
+    inspections = client.get(
+        "/api/v1/inspections", params={"restroom_id": restroom["id"]}
+    ).json()
+    assert inspections["meta"]["total"] == 0
+
+    # 删除审计完整留存，可解释看板与报表中消失的数据
+    logs = client.get("/api/v1/restrooms/deletion-logs").json()
+    mine = [log for log in logs["items"] if log["restroom_id"] == restroom["id"]]
+    assert len(mine) == 1
+    log = mine[0]
+    assert log["code"] == restroom["code"]
+    assert log["district"] == restroom["district"]
+    assert log["inspection_count"] == 1
+    assert log["issue_count"] == 1
+    assert log["rectification_count"] == 2
+    assert log["attachment_count"] == 2
+    assert log["issue_by_status"] == {"已关闭": 1}
+    assert log["issue_by_category"] == {"设施损坏": 1}
+    assert log["restroom_snapshot"]["name"] == restroom["name"]
+    assert log["operator"] == "测试员"
+    assert log["reason"] == "公厕拆除"
+
+    # 看板总览能体现累计删除数
+    overview = client.get("/api/v1/stats/overview").json()
+    assert overview["restroom_deleted_total"] >= 1
+
+
+def test_force_delete_rolls_back_on_failure(client, restroom, monkeypatch):
+    # 准备：巡查 + 已关闭问题，使强制删除满足前置条件
+    client.post(
+        "/api/v1/inspections",
+        json={
+            "restroom_id": restroom["id"],
+            "inspector": "测试巡查员",
+            "items": full_items(8),
+        },
+    )
+    issue = client.post(
+        "/api/v1/issues",
+        json={"restroom_id": restroom["id"], "title": "标识牌褪色"},
+    ).json()
+    client.post(
+        f"/api/v1/issues/{issue['id']}/transitions",
+        json={"to_status": "已关闭", "operator": "值班长"},
+    )
+
+    # 模拟提交阶段故障：删除与审计写入必须整体回退
+    from sqlalchemy.orm import Session as OrmSession
+
+    logs_before = client.get("/api/v1/restrooms/deletion-logs").json()["meta"]["total"]
+
+    def boom(self):
+        raise RuntimeError("模拟提交失败")
+
+    monkeypatch.setattr(OrmSession, "commit", boom)
+    with pytest.raises(RuntimeError):
+        client.delete(f"/api/v1/restrooms/{restroom['id']}", params={"force": "true"})
+    monkeypatch.undo()
+
+    # 公厕、巡查、问题及整改流水全部完好，且未新增审计记录
+    assert client.get(f"/api/v1/restrooms/{restroom['id']}").status_code == 200
+    detail = client.get(f"/api/v1/issues/{issue['id']}").json()
+    assert detail["status"] == "已关闭"
+    assert len(detail["records"]) == 2
+    inspections = client.get(
+        "/api/v1/inspections", params={"restroom_id": restroom["id"]}
+    ).json()
+    assert inspections["meta"]["total"] == 1
+    logs_after = client.get("/api/v1/restrooms/deletion-logs").json()["meta"]["total"]
+    assert logs_after == logs_before
 
 
 def test_dashboard_stats(client, restroom):

@@ -55,7 +55,12 @@ export default function DashboardPage() {
                 label="在册公厕"
                 value={overview.restroom_total}
                 unit="座"
-                foot={`正常开放 ${overview.restroom_open} 座 · 维修 ${overview.restroom_maintenance} 座`}
+                foot={
+                  `正常开放 ${overview.restroom_open} 座 · 维修 ${overview.restroom_maintenance} 座` +
+                  (overview.restroom_deleted_total
+                    ? ` · 累计删除 ${overview.restroom_deleted_total} 座`
+                    : '')
+                }
               />
               <StatCard
                 label="巡查记录总数"

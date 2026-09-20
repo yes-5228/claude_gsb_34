@@ -11,6 +11,8 @@ import { useToast } from '../../components/Toast.jsx';
 import { useAsync } from '../../hooks/useAsync.js';
 import { useDictionaries } from '../../hooks/useDictionaries.js';
 import { useListQuery } from '../../hooks/useListQuery.js';
+import DeletionLogsModal from './DeletionLogsModal.jsx';
+import RestroomDeleteModal from './RestroomDeleteModal.jsx';
 import RestroomFormModal from './RestroomFormModal.jsx';
 
 const DEFAULT_FILTERS = { keyword: '', district: '', status: '', grade: '' };
@@ -20,24 +22,39 @@ export default function RestroomListPage() {
   const toast = useToast();
   const [editing, setEditing] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
+  const [deleting, setDeleting] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const list = useListQuery((params) => restroomApi.list(params), DEFAULT_FILTERS, 10);
   const { data: districts } = useAsync(() => restroomApi.districts(), []);
 
-  const remove = async (row) => {
-    if (!window.confirm(`确认删除公厕「${row.name}」？`)) return;
+  // 删除前先拉取影响面：随删多少数据、是否被未闭环问题阻断，在弹窗中明示
+  const askRemove = async (row) => {
     try {
-      await restroomApi.remove(row.id);
-      toast.success('删除成功');
+      const impact = await restroomApi.deletionImpact(row.id);
+      setDeleting({ row, impact });
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
+  const confirmRemove = async (reason) => {
+    if (!deleting) return;
+    setDeleteBusy(true);
+    try {
+      const { row, impact } = deleting;
+      const result = await restroomApi.remove(row.id, {
+        force: impact.requires_force ? true : undefined,
+        reason: reason || undefined,
+      });
+      toast.success(result.message || '删除成功');
+      setDeleting(null);
       list.reload();
     } catch (err) {
-      if (err.status === 409 && window.confirm(`${err.message}\n\n是否连同巡查与问题记录一并删除？`)) {
-        await restroomApi.remove(row.id, { force: true });
-        toast.success('已级联删除');
-        list.reload();
-        return;
-      }
       toast.error(err.message);
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -47,16 +64,21 @@ export default function RestroomListPage() {
         title="公厕台账"
         description="维护全市公厕基础档案、责任人与设施配置"
         actions={
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => {
-              setEditing(null);
-              setShowForm(true);
-            }}
-          >
-            + 新增公厕
-          </button>
+          <div className="inline">
+            <button type="button" className="btn" onClick={() => setShowLogs(true)}>
+              删除记录
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => {
+                setEditing(null);
+                setShowForm(true);
+              }}
+            >
+              + 新增公厕
+            </button>
+          </div>
         }
       />
       <div className="content">
@@ -150,7 +172,7 @@ export default function RestroomListPage() {
                     >
                       编辑
                     </button>
-                    <button type="button" className="btn-link danger" onClick={() => remove(row)}>
+                    <button type="button" className="btn-link danger" onClick={() => askRemove(row)}>
                       删除
                     </button>
                   </div>
@@ -169,6 +191,18 @@ export default function RestroomListPage() {
           onSaved={list.reload}
         />
       ) : null}
+
+      {deleting ? (
+        <RestroomDeleteModal
+          restroom={deleting.row}
+          impact={deleting.impact}
+          busy={deleteBusy}
+          onCancel={() => setDeleting(null)}
+          onConfirm={confirmRemove}
+        />
+      ) : null}
+
+      {showLogs ? <DeletionLogsModal onClose={() => setShowLogs(false)} /> : null}
     </>
   );
 }
