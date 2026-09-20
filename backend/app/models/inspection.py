@@ -17,7 +17,7 @@ class Inspection(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     restroom_id: Mapped[int] = mapped_column(
-        ForeignKey("restrooms.id", ondelete="CASCADE"), index=True, comment="所属公厕"
+        ForeignKey("restrooms.id", ondelete="RESTRICT"), index=True, comment="所属公厕"
     )
     inspector: Mapped[str] = mapped_column(String(60), index=True, comment="巡查人")
     inspect_time: Mapped[datetime] = mapped_column(

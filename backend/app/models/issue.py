@@ -17,7 +17,7 @@ class Issue(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     code: Mapped[str] = mapped_column(String(32), unique=True, index=True, comment="问题编号")
     restroom_id: Mapped[int] = mapped_column(
-        ForeignKey("restrooms.id", ondelete="CASCADE"), index=True, comment="所属公厕"
+        ForeignKey("restrooms.id", ondelete="RESTRICT"), index=True, comment="所属公厕"
     )
     inspection_id: Mapped[int | None] = mapped_column(
         ForeignKey("inspections.id", ondelete="SET NULL"), nullable=True, index=True,

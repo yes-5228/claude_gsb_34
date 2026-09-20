@@ -42,9 +42,88 @@ def test_restroom_crud_and_delete_guard(client, restroom):
     blocked = client.delete(f"/api/v1/restrooms/{restroom['id']}")
     assert blocked.status_code == 409
 
-    ok = client.delete(f"/api/v1/restrooms/{restroom['id']}", params={"force": "true"})
+    impact = client.get(f"/api/v1/restrooms/{restroom['id']}/delete-impact").json()
+    assert impact["can_delete"] is True
+    assert impact["action"] == "archive"
+    assert impact["inspection_count"] == 1
+    assert impact["rectification_record_count"] == 0
+
+    ok = client.delete(
+        f"/api/v1/restrooms/{restroom['id']}",
+        params={"force": "true", "reason": "拆除", "operator": "管理员"},
+    )
     assert ok.status_code == 200
+    payload = ok.json()
+    assert payload["action"] == "archive"
+    assert payload["audit_id"] is not None
     assert client.get(f"/api/v1/restrooms/{restroom['id']}").status_code == 404
+
+    inspections = client.get(
+        "/api/v1/inspections", params={"restroom_id": restroom["id"], "include_archived": "true"}
+    ).json()
+    assert inspections["meta"]["total"] == 1
+
+
+def test_restroom_delete_preserves_closed_history_and_blocks_open_issues(client, restroom):
+    inspection = client.post(
+        "/api/v1/inspections",
+        json={
+            "restroom_id": restroom["id"],
+            "inspector": "王巡查",
+            "items": full_items(4),
+        },
+    ).json()
+    issue = client.post(
+        "/api/v1/issues",
+        json={
+            "restroom_id": restroom["id"],
+            "inspection_id": inspection["id"],
+            "title": "需要先闭环的问题",
+            "images": ["evidence-1.jpg", "evidence-2.jpg"],
+        },
+    ).json()
+
+    blocked_impact = client.get(f"/api/v1/restrooms/{restroom['id']}/delete-impact").json()
+    assert blocked_impact["can_delete"] is False
+    assert blocked_impact["action"] == "blocked"
+    assert blocked_impact["open_issue_count"] == 1
+    blocked = client.delete(f"/api/v1/restrooms/{restroom['id']}", params={"force": "true"})
+    assert blocked.status_code == 409
+
+    for target, operator in (
+        ("整改中", "保洁员"),
+        ("待验收", "保洁员"),
+        ("已完成", "值班长"),
+        ("已关闭", "值班长"),
+    ):
+        response = client.post(
+            f"/api/v1/issues/{issue['id']}/transitions",
+            json={"to_status": target, "operator": operator},
+        )
+        assert response.status_code == 200, response.text
+
+    result = client.delete(
+        f"/api/v1/restrooms/{restroom['id']}",
+        params={"force": "true", "reason": "公厕拆除", "operator": "管理员"},
+    ).json()
+    assert result["action"] == "archive"
+    assert result["impact"]["issue_count"] == 1
+    assert result["impact"]["rectification_record_count"] >= 4
+    assert result["impact"]["attachment_count"] == 2
+
+    retained_issue = client.get(f"/api/v1/issues/{issue['id']}").json()
+    assert retained_issue["restroom"]["archived"] is True
+    assert len(retained_issue["records"]) >= 4
+    assert retained_issue["images"] == ["evidence-1.jpg", "evidence-2.jpg"]
+
+    month = datetime.now().strftime("%Y-%m")
+    report = client.get("/api/v1/stats/monthly-report", params={"month": month}).json()
+    assert report["archived_restroom_count"] == 1
+    assert report["retained_issue_count"] == 1
+    assert report["retained_attachment_count"] == 2
+    assert report["archives"][0]["code"] == restroom["code"]
+    assert report["archives"][0]["reason"] == "公厕拆除"
+    assert "历史口径" in report["reconciliation_note"]
 
 
 def test_inspection_scoring_and_filter(client, restroom):
@@ -222,4 +301,6 @@ def test_dashboard_stats(client, restroom):
         "已关闭",
     }
     assert payload["top_restrooms"]
+    assert "retained_issue_count" in overview
+    assert "archived_restroom_count" in overview
     assert "rectification_rate" in overview

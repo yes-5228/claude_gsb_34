@@ -126,6 +126,31 @@ export default function DashboardPage() {
               <RankingPanel items={data.top_restrooms} />
             </div>
 
+            <section className="card">
+              <div className="card-title">
+                <h3>归档数据保留</h3>
+                <span className="hint">当前台账移除，历史报表不消失</span>
+              </div>
+              <div className="detail-list">
+                <div className="detail-row">
+                  <span className="label">已归档公厕</span>
+                  <span className="value">{overview.archived_restroom_count} 座</span>
+                </div>
+                <div className="detail-row">
+                  <span className="label">保留巡查 / 问题</span>
+                  <span className="value">
+                    {overview.retained_inspection_count} 条 / {overview.retained_issue_count} 条
+                  </span>
+                </div>
+                <div className="detail-row">
+                  <span className="label">保留整改流水 / 附件</span>
+                  <span className="value">
+                    {overview.retained_record_count} 条 / {overview.retained_attachment_count} 个
+                  </span>
+                </div>
+              </div>
+            </section>
+
             <div className="grid-2">
               <RecentIssuesPanel items={data.recent_issues} />
               <RecentInspectionsPanel items={data.recent_inspections} />

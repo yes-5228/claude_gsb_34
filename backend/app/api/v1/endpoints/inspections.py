@@ -29,6 +29,7 @@ def list_inspections(
     date_to: Annotated[date | None, Query(description="结束日期")] = None,
     sort_by: Annotated[str, Query(description="排序字段")] = "inspect_time",
     order: Annotated[str, Query(pattern="^(asc|desc)$")] = "desc",
+    include_archived: Annotated[bool, Query(description="包含已归档公厕的历史巡查")] = False,
 ) -> Page[InspectionOut]:
     rows, total = inspection_service.list_inspections(
         db,
@@ -44,6 +45,7 @@ def list_inspections(
         page_size=pagination.page_size,
         sort_by=sort_by,
         order=order,
+        include_archived=include_archived,
     )
     return Page[InspectionOut](
         items=[inspection_service.to_out(row) for row in rows],

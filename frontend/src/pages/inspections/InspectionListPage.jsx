@@ -8,7 +8,6 @@ import Field from '../../components/Field.jsx';
 import PageHeader from '../../components/PageHeader.jsx';
 import Pagination from '../../components/Pagination.jsx';
 import { GradeTag, ScorePill, StatusTag } from '../../components/Tags.jsx';
-import { useToast } from '../../components/Toast.jsx';
 import { useAsync } from '../../hooks/useAsync.js';
 import { useDictionaries } from '../../hooks/useDictionaries.js';
 import { useListQuery } from '../../hooks/useListQuery.js';
@@ -27,24 +26,12 @@ const DEFAULT_FILTERS = {
 
 export default function InspectionListPage() {
   const { dictionaries } = useDictionaries();
-  const toast = useToast();
   const navigate = useNavigate();
   const [showForm, setShowForm] = useState(false);
   const [active, setActive] = useState(null);
 
   const list = useListQuery((params) => inspectionApi.list(params), DEFAULT_FILTERS, 10);
   const { data: districts } = useAsync(() => restroomApi.districts(), []);
-
-  const remove = async (row) => {
-    if (!window.confirm('确认删除该条巡查记录？关联的问题记录不会被删除。')) return;
-    try {
-      await inspectionApi.remove(row.id);
-      toast.success('删除成功');
-      list.reload();
-    } catch (err) {
-      toast.error(err.message);
-    }
-  };
 
   return (
     <>
@@ -166,9 +153,6 @@ export default function InspectionListPage() {
                       }
                     >
                       上报问题
-                    </button>
-                    <button type="button" className="btn-link danger" onClick={() => remove(row)}>
-                      删除
                     </button>
                   </div>
                 ),

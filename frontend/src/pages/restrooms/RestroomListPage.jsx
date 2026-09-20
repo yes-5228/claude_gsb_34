@@ -25,18 +25,45 @@ export default function RestroomListPage() {
   const { data: districts } = useAsync(() => restroomApi.districts(), []);
 
   const remove = async (row) => {
-    if (!window.confirm(`确认删除公厕「${row.name}」？`)) return;
+    let impact;
     try {
-      await restroomApi.remove(row.id);
-      toast.success('删除成功');
+      impact = await restroomApi.deleteImpact(row.id);
+    } catch (err) {
+      toast.error(err.message);
+      return;
+    }
+
+    const summary = [
+      `公厕：${impact.name}（${impact.code} / ${impact.district}）`,
+      `巡查记录：${impact.inspection_count} 条`,
+      `问题记录：${impact.issue_count} 条（未闭环 ${impact.open_issue_count} 条）`,
+      `整改流水：${impact.rectification_record_count} 条；附件：${impact.attachment_count} 个`,
+      '',
+      impact.action === 'archive'
+        ? '强制确认后只会归档公厕台账，巡查、问题、整改流水和附件全部保留，历史报表仍可追溯。'
+        : impact.message,
+    ].join('\n');
+
+    if (!impact.can_delete) {
+      window.alert(`无法删除：\n${summary}\n\n需先处置：\n${impact.blockers.join('\n')}`);
+      return;
+    }
+    if (!window.confirm(`${summary}\n\n确认继续？`)) return;
+
+    const params = {};
+    if (impact.action === 'archive') {
+      const reason = window.prompt('请填写归档原因（用于审计和月报差异说明）');
+      if (reason === null) return;
+      params.force = true;
+      params.reason = reason || '公厕档案强制归档';
+      params.operator = window.prompt('请填写操作人', '管理员') || '管理员';
+    }
+
+    try {
+      const result = await restroomApi.remove(row.id, params);
+      toast.success(result.message || '删除成功');
       list.reload();
     } catch (err) {
-      if (err.status === 409 && window.confirm(`${err.message}\n\n是否连同巡查与问题记录一并删除？`)) {
-        await restroomApi.remove(row.id, { force: true });
-        toast.success('已级联删除');
-        list.reload();
-        return;
-      }
       toast.error(err.message);
     }
   };

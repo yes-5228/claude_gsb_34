@@ -1,6 +1,5 @@
 """公厕台账接口。"""
 
-from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -8,8 +7,15 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import PaginationDep, build_meta
 from app.core.database import get_db
-from app.schemas.common import MessageOut, Page
-from app.schemas.restroom import RestroomCreate, RestroomDetail, RestroomOut, RestroomUpdate
+from app.schemas.common import Page
+from app.schemas.restroom import (
+    RestroomCreate,
+    RestroomDeleteImpact,
+    RestroomDeleteResult,
+    RestroomDetail,
+    RestroomOut,
+    RestroomUpdate,
+)
 from app.services import restroom_service
 
 router = APIRouter(prefix="/restrooms", tags=["公厕台账"])
@@ -55,6 +61,17 @@ def create_restroom(
     return RestroomOut.model_validate(restroom_service.create_restroom(db, payload))
 
 
+@router.get(
+    "/{restroom_id}/delete-impact",
+    response_model=RestroomDeleteImpact,
+    summary="删除公厕前的影响面评估",
+)
+def get_restroom_delete_impact(
+    restroom_id: int, db: Annotated[Session, Depends(get_db)]
+) -> RestroomDeleteImpact:
+    return restroom_service.build_delete_impact(db, restroom_id)
+
+
 @router.get("/{restroom_id}", response_model=RestroomDetail, summary="公厕详情")
 def get_restroom(restroom_id: int, db: Annotated[Session, Depends(get_db)]) -> RestroomDetail:
     return restroom_service.get_restroom_detail(db, restroom_id)
@@ -67,11 +84,16 @@ def update_restroom(
     return RestroomOut.model_validate(restroom_service.update_restroom(db, restroom_id, payload))
 
 
-@router.delete("/{restroom_id}", response_model=MessageOut, summary="删除公厕")
+@router.delete("/{restroom_id}", response_model=RestroomDeleteResult, summary="删除或归档公厕")
 def delete_restroom(
     restroom_id: int,
     db: Annotated[Session, Depends(get_db)],
-    force: Annotated[bool, Query(description="为 true 时级联删除巡查与问题记录")] = False,
-) -> MessageOut:
-    restroom_service.delete_restroom(db, restroom_id, force=force)
-    return MessageOut(message="删除成功")
+    force: Annotated[bool, Query(description="存在已闭环历史数据时，true 表示确认归档并保留历史")] = False,
+    reason: Annotated[str | None, Query(max_length=500, description="删除或归档原因")] = None,
+    operator: Annotated[str, Query(max_length=60, description="操作人")] = "",
+) -> RestroomDeleteResult:
+    action, impact, audit_id = restroom_service.delete_restroom(
+        db, restroom_id, force=force, reason=reason, operator=operator
+    )
+    message = "删除成功" if action == "delete" else "已归档公厕，巡查、问题、整改流水和附件均已保留"
+    return RestroomDeleteResult(action=action, message=message, audit_id=audit_id, impact=impact)

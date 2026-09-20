@@ -47,6 +47,13 @@ def get_inspection(db: Session, inspection_id: int) -> Inspection:
 def to_out(inspection: Inspection) -> InspectionOut:
     data = InspectionOut.model_validate(inspection)
     data.issue_count = len(inspection.issues)
+    if inspection.restroom is not None:
+        data.restroom = data.restroom.model_copy(
+            update={
+                "archived": inspection.restroom.archived,
+                "archived_at": inspection.restroom.archived_at,
+            }
+        )
     return data
 
 
@@ -65,12 +72,13 @@ def list_inspections(
     page_size: int = 10,
     sort_by: str = "inspect_time",
     order: str = "desc",
+    include_archived: bool = False,
 ) -> tuple[list[Inspection], int]:
-    stmt = select(Inspection)
+    stmt = select(Inspection).join(Restroom, Restroom.id == Inspection.restroom_id)
+    if not include_archived:
+        stmt = stmt.where(Restroom.deleted_at.is_(None))
     if district:
-        stmt = stmt.join(Restroom, Restroom.id == Inspection.restroom_id).where(
-            Restroom.district == district
-        )
+        stmt = stmt.where(Restroom.district == district)
     if restroom_id:
         stmt = stmt.where(Inspection.restroom_id == restroom_id)
     if inspector:
@@ -146,13 +154,12 @@ def update_inspection(db: Session, inspection_id: int, payload: InspectionUpdate
 
 
 def delete_inspection(db: Session, inspection_id: int) -> None:
-    inspection = get_inspection(db, inspection_id)
-    db.delete(inspection)
-    db.commit()
+    get_inspection(db, inspection_id)
+    raise DomainError("巡查记录承载评分历史和问题来源，不允许直接删除")
 
 
 def restroom_options(db: Session, keyword: str | None = None, limit: int = 50) -> list[Restroom]:
-    stmt = select(Restroom).order_by(Restroom.code)
+    stmt = select(Restroom).where(Restroom.deleted_at.is_(None)).order_by(Restroom.code)
     if keyword:
         like = f"%{keyword.strip()}%"
         stmt = stmt.where(or_(Restroom.name.like(like), Restroom.code.like(like)))

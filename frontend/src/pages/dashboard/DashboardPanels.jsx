@@ -75,6 +75,7 @@ export function DistrictPanel({ items }) {
           { key: 'district', title: '区域' },
           { key: 'restroom_count', title: '公厕数' },
           { key: 'issue_open', title: '未闭环' },
+          { key: 'retained_issue_count', title: '归档保留' },
           {
             key: 'avg_score',
             title: '巡查均分',

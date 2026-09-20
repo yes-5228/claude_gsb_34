@@ -8,7 +8,6 @@ import Field from '../../components/Field.jsx';
 import PageHeader from '../../components/PageHeader.jsx';
 import Pagination from '../../components/Pagination.jsx';
 import { OverdueTag, SeverityTag, StatusTag } from '../../components/Tags.jsx';
-import { useToast } from '../../components/Toast.jsx';
 import { useAsync } from '../../hooks/useAsync.js';
 import { useDictionaries } from '../../hooks/useDictionaries.js';
 import { useListQuery } from '../../hooks/useListQuery.js';
@@ -27,7 +26,6 @@ const DEFAULT_FILTERS = {
 
 export default function IssueListPage() {
   const { dictionaries } = useDictionaries();
-  const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [showForm, setShowForm] = useState(false);
   const [preset, setPreset] = useState({});
@@ -46,17 +44,6 @@ export default function IssueListPage() {
     setShowForm(true);
     setSearchParams({}, { replace: true });
   }, [searchParams, setSearchParams]);
-
-  const remove = async (row) => {
-    if (!window.confirm(`确认删除问题「${row.title}」及其整改记录？`)) return;
-    try {
-      await issueApi.remove(row.id);
-      toast.success('删除成功');
-      list.reload();
-    } catch (err) {
-      toast.error(err.message);
-    }
-  };
 
   return (
     <>
@@ -173,7 +160,13 @@ export default function IssueListPage() {
                 title: '公厕',
                 render: (row) =>
                   row.restroom ? (
-                    <Link to={`/restrooms/${row.restroom.id}`}>{row.restroom.name}</Link>
+                    row.restroom.archived ? (
+                      <span title="公厕档案已归档，历史记录保留">
+                        {row.restroom.name}（已归档）
+                      </span>
+                    ) : (
+                      <Link to={`/restrooms/${row.restroom.id}`}>{row.restroom.name}</Link>
+                    )
                   ) : (
                     '-'
                   ),
@@ -210,9 +203,6 @@ export default function IssueListPage() {
                     <Link className="btn-link" to={`/issues/${row.id}`}>
                       详情 / 整改
                     </Link>
-                    <button type="button" className="btn-link danger" onClick={() => remove(row)}>
-                      删除
-                    </button>
                   </div>
                 ),
               },

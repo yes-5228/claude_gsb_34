@@ -4,7 +4,7 @@ import os
 from collections.abc import Generator
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import settings
@@ -56,3 +56,15 @@ def init_db() -> None:
     from app import models  # noqa: F401  确保模型完成注册
 
     Base.metadata.create_all(bind=engine)
+    _ensure_schema_updates()
+
+
+def _ensure_schema_updates() -> None:
+    """为既有开发库补齐轻量字段；正式环境应使用迁移工具管理。"""
+    inspector = inspect(engine)
+    if "restrooms" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("restrooms")}
+    with engine.begin() as conn:
+        if "deleted_at" not in columns:
+            conn.execute(text("ALTER TABLE restrooms ADD COLUMN deleted_at DATETIME"))

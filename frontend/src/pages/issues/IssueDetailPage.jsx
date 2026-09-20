@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 
 import { issueApi } from '../../api/issues.js';
 import DetailList from '../../components/DetailList.jsx';
@@ -15,7 +15,6 @@ import IssueEditModal from './IssueEditModal.jsx';
 
 export default function IssueDetailPage() {
   const { issueId } = useParams();
-  const navigate = useNavigate();
   const toast = useToast();
   const [activeOption, setActiveOption] = useState(null);
   const [showEdit, setShowEdit] = useState(false);
@@ -68,17 +67,6 @@ export default function IssueDetailPage() {
     }
   };
 
-  const remove = async () => {
-    if (!window.confirm('确认删除该问题及其整改记录？')) return;
-    try {
-      await issueApi.remove(issueId);
-      toast.success('已删除');
-      navigate('/issues');
-    } catch (err) {
-      toast.error(err.message);
-    }
-  };
-
   return (
     <>
       <PageHeader
@@ -89,12 +77,11 @@ export default function IssueDetailPage() {
             <Link className="btn" to="/issues">
               返回列表
             </Link>
-            <button type="button" className="btn" onClick={() => setShowEdit(true)}>
-              编辑信息
-            </button>
-            <button type="button" className="btn btn-danger" onClick={remove}>
-              删除
-            </button>
+            {!issue.restroom?.archived ? (
+              <button type="button" className="btn" onClick={() => setShowEdit(true)}>
+                编辑信息
+              </button>
+            ) : null}
           </>
         }
       />
@@ -119,9 +106,15 @@ export default function IssueDetailPage() {
                   {
                     label: '所属公厕',
                     value: issue.restroom ? (
-                      <Link to={`/restrooms/${issue.restroom.id}`}>
-                        {issue.restroom.name}（{issue.restroom.district}）
-                      </Link>
+                      issue.restroom.archived ? (
+                        <span title="公厕档案已归档，历史记录保留">
+                          {issue.restroom.name}（{issue.restroom.district} · 已归档）
+                        </span>
+                      ) : (
+                        <Link to={`/restrooms/${issue.restroom.id}`}>
+                          {issue.restroom.name}（{issue.restroom.district}）
+                        </Link>
+                      )
                     ) : (
                       '-'
                     ),
@@ -148,7 +141,9 @@ export default function IssueDetailPage() {
                 <h3>整改流转</h3>
                 <span className="hint">按流程推进，越级操作会被服务端拒绝</span>
               </div>
-              {options?.length ? (
+              {issue.restroom?.archived ? (
+                <div className="alert alert-info">所属公厕已归档，问题和整改轨迹只读保留，不能继续流转或追加记录。</div>
+              ) : options?.length ? (
                 <div className="action-group">
                   {options.map((option) => (
                     <button
@@ -165,7 +160,7 @@ export default function IssueDetailPage() {
                 <div className="alert alert-info">该问题已关闭，整改流程结束。</div>
               )}
 
-              {issue.status !== '已关闭' ? (
+              {issue.status !== '已关闭' && !issue.restroom?.archived ? (
                 <form className="form-grid" style={{ marginTop: 18 }} onSubmit={submitProgress}>
                   <Field label="记录类型">
                     <select

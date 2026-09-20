@@ -17,6 +17,8 @@ class RestroomBrief(BaseModel):
     name: str
     district: str
     address: str = ""
+    archived: bool = False
+    archived_at: datetime | None = None
 
 
 class RestroomBase(BaseModel):
@@ -64,6 +66,8 @@ class RestroomOut(RestroomBase):
 
     id: int
     code: str
+    archived: bool = False
+    archived_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -77,3 +81,41 @@ class RestroomDetail(RestroomOut):
     avg_score: float | None = None
     open_issue_count: int = 0
     total_issue_count: int = 0
+    rectification_record_count: int = 0
+    attachment_count: int = 0
+
+
+class IssueStatusCount(BaseModel):
+    status: str
+    count: int = 0
+
+
+class RestroomDeleteImpact(BaseModel):
+    """强制归档前返回的影响面与处置边界。"""
+
+    restroom_id: int
+    code: str
+    name: str
+    district: str
+    can_delete: bool
+    action: str = Field(description="delete=物理删除；archive=归档保留历史；blocked=需先处置")
+    blockers: list[str] = Field(default_factory=list)
+    inspection_count: int = 0
+    issue_count: int = 0
+    open_issue_count: int = 0
+    closed_issue_count: int = 0
+    issue_status_counts: list[IssueStatusCount] = Field(default_factory=list)
+    rectification_record_count: int = 0
+    attachment_count: int = 0
+    retained: list[str] = Field(default_factory=list, description="归档后仍保留的数据")
+    removed_from_active_views: list[str] = Field(default_factory=list, description="从当前台账/看板移除的内容")
+    message: str
+
+
+class RestroomDeleteResult(BaseModel):
+    """删除或归档结果。"""
+
+    action: str
+    message: str
+    audit_id: int | None = None
+    impact: RestroomDeleteImpact

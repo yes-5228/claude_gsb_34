@@ -34,14 +34,25 @@ class Restroom(Base):
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True, comment="经度")
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True, comment="纬度")
     remark: Mapped[str | None] = mapped_column(Text, nullable=True, comment="备注")
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, index=True, comment="归档时间；非空表示台账已删除"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, comment="创建时间")
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.now, onupdate=datetime.now, comment="更新时间"
     )
 
     inspections: Mapped[list["Inspection"]] = relationship(  # noqa: F821
-        back_populates="restroom", cascade="all, delete-orphan"
+        back_populates="restroom", passive_deletes=True
     )
     issues: Mapped[list["Issue"]] = relationship(  # noqa: F821
-        back_populates="restroom", cascade="all, delete-orphan"
+        back_populates="restroom", passive_deletes=True
     )
+
+    @property
+    def archived(self) -> bool:
+        return self.deleted_at is not None
+
+    @property
+    def archived_at(self) -> datetime | None:
+        return self.deleted_at

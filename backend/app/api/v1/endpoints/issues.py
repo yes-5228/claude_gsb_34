@@ -43,6 +43,7 @@ def list_issues(
     overdue: Annotated[bool | None, Query(description="是否超期")] = None,
     date_from: Annotated[date | None, Query(description="上报开始日期")] = None,
     date_to: Annotated[date | None, Query(description="上报结束日期")] = None,
+    include_archived: Annotated[bool, Query(description="包含已归档公厕的历史问题")] = True,
     sort_by: Annotated[str, Query(description="排序字段")] = "report_time",
     order: Annotated[str, Query(pattern="^(asc|desc)$")] = "desc",
 ) -> Page[IssueOut]:
@@ -60,6 +61,7 @@ def list_issues(
         overdue=overdue,
         date_from=date_from,
         date_to=date_to,
+        include_archived=include_archived,
         page=pagination.page,
         page_size=pagination.page_size,
         sort_by=sort_by,

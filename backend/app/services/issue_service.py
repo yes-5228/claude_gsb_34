@@ -53,7 +53,15 @@ def get_issue(db: Session, issue_id: int) -> Issue:
 
 
 def to_out(issue: Issue) -> IssueOut:
-    return IssueOut.model_validate(issue)
+    data = IssueOut.model_validate(issue)
+    if issue.restroom is not None:
+        data.restroom = data.restroom.model_copy(
+            update={
+                "archived": issue.restroom.archived,
+                "archived_at": issue.restroom.archived_at,
+            }
+        )
+    return data
 
 
 def is_overdue(issue: Issue) -> bool:
@@ -82,12 +90,13 @@ def list_issues(
     page_size: int = 10,
     sort_by: str = "report_time",
     order: str = "desc",
+    include_archived: bool = True,
 ) -> tuple[list[Issue], int]:
-    stmt = select(Issue)
+    stmt = select(Issue).join(Restroom, Restroom.id == Issue.restroom_id)
+    if not include_archived:
+        stmt = stmt.where(Restroom.deleted_at.is_(None))
     if district:
-        stmt = stmt.join(Restroom, Restroom.id == Issue.restroom_id).where(
-            Restroom.district == district
-        )
+        stmt = stmt.where(Restroom.district == district)
     if restroom_id:
         stmt = stmt.where(Issue.restroom_id == restroom_id)
     if inspection_id:
@@ -134,8 +143,14 @@ def list_issues(
     return rows, total
 
 
+def _assert_restroom_active(restroom: Restroom) -> None:
+    if restroom.deleted_at is not None:
+        raise DomainError("公厕档案已归档，不能新增或继续处置业务记录")
+
+
 def create_issue(db: Session, payload: IssueCreate) -> Issue:
-    restroom_service.get_restroom(db, payload.restroom_id)
+    restroom = restroom_service.get_restroom(db, payload.restroom_id)
+    _assert_restroom_active(restroom)
     if payload.inspection_id is not None:
         inspection = db.get(Inspection, payload.inspection_id)
         if inspection is None:
@@ -169,6 +184,7 @@ def create_issue(db: Session, payload: IssueCreate) -> Issue:
 
 def update_issue(db: Session, issue_id: int, payload: IssueUpdate) -> Issue:
     issue = get_issue(db, issue_id)
+    _assert_restroom_active(issue.restroom)
     issue_data = payload.model_dump(exclude_unset=True)
     if "images" in issue_data and payload.images is not None:
         issue_data["images"] = list(payload.images)
@@ -188,6 +204,7 @@ def allowed_transitions(issue: Issue) -> list[dict[str, str]]:
 
 def change_status(db: Session, issue_id: int, payload: IssueStatusUpdate) -> Issue:
     issue = get_issue(db, issue_id)
+    _assert_restroom_active(issue.restroom)
     target = payload.to_status.value
     if target == issue.status:
         raise DomainError(f"问题已处于「{target}」状态")
@@ -200,7 +217,7 @@ def change_status(db: Session, issue_id: int, payload: IssueStatusUpdate) -> Iss
 
     from_status = issue.status
     issue.status = target
-    issue.closed_at = datetime.now() if target == IssueStatus.CLOSED.value else None
+    issue.closed_at = datetime.now() if target in {IssueStatus.CLOSED.value} else None
     if payload.to_status == IssueStatus.PROCESSING and payload.operator:
         issue.assignee = payload.operator if not issue.assignee else issue.assignee
     issue.records.append(
@@ -221,6 +238,7 @@ def change_status(db: Session, issue_id: int, payload: IssueStatusUpdate) -> Iss
 def add_record(db: Session, issue_id: int, *, action: str, operator: str, remark: str | None) -> Issue:
     """在不改变状态的前提下追加跟进记录（如整改进度说明）。"""
     issue = get_issue(db, issue_id)
+    _assert_restroom_active(issue.restroom)
     if issue.status == IssueStatus.CLOSED.value:
         raise DomainError("问题已关闭，无法追加整改记录")
     issue.records.append(
@@ -238,6 +256,7 @@ def add_record(db: Session, issue_id: int, *, action: str, operator: str, remark
 
 
 def delete_issue(db: Session, issue_id: int) -> None:
-    issue = get_issue(db, issue_id)
-    db.delete(issue)
-    db.commit()
+    get_issue(db, issue_id)
+    raise DomainError(
+        "问题记录承载整改流水、附件和历史统计，不允许直接删除；如公厕已拆除请归档公厕档案"
+    )
